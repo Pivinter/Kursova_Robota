@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Transport Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+    <style>
+        #map { height: 600px; margin-top: 10px; }
+        #controls { margin-top: 10px; }
+        button { padding: 5px 10px; }
+    </style>
+</head>
+<body>
+    <h3>Маршрут автобуса у Львові</h3>
+
+    <!-- Меню вибору маршруту -->
+    <label for="routeSelect">Оберіть маршрут автобуса:</label>
+    <select id="routeSelect">
+        <option value="" selected disabled>Оберіть маршрут</option>
+    </select>
+
+    <!-- Кнопка для визначення місцезнаходження -->
+    <div id="controls">
+        <button id="locateButton">Показати моє місцезнаходження</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([49.8397, 24.0297], 13);
+
+        // Додавання плитки карти OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        const routeSelect = document.getElementById('routeSelect');
+        const locateButton = document.getElementById('locateButton');
+        let currentMarker = null;
+        let currentRouteLine = null;
+        let userLocationMarker = null;
+
+        // Завантаження маршруту з сервера
+        async function loadRoutes() {
+            const response = await fetch('/get_transport_data');
+            const data = await response.json();
+
+            // Заповнення меню вибору маршруту
+            Object.keys(data).forEach(type => {
+                data[type].forEach(route => {
+                    const option = document.createElement('option');
+                    option.value = JSON.stringify(route.path);
+                    option.textContent = `Маршрут ${route.id}`;
+                    routeSelect.appendChild(option);
+                });
+            });
+        }
+
+        // Відображення обраного маршруту на карті
+        function displaySelectedRoute(routePath) {
+            const path = JSON.parse(routePath);
+
+            // Видалення попереднього маркера і маршруту
+            if (currentMarker) map.removeLayer(currentMarker);
+            if (currentRouteLine) map.removeLayer(currentRouteLine);
+
+            // Встановлення маркера на початок маршруту
+            currentMarker = L.marker(path[0]).addTo(map)
+                             .bindPopup("Початок маршруту").openPopup();
+
+            // Відображення маршруту на карті
+            currentRouteLine = L.polyline(path, { color: 'blue' }).addTo(map);
+            map.fitBounds(currentRouteLine.getBounds());
+        }
+
+        // Обробка вибору маршруту з меню
+        routeSelect.addEventListener('change', function() {
+            const selectedRoute = routeSelect.value;
+            displaySelectedRoute(selectedRoute);
+        });
+
+        // Функція для показу місцезнаходження користувача з покращеною точністю
+        function showUserLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    position => {
+                        const { latitude, longitude, accuracy } = position.coords;
+
+                        // Видалити попередній маркер місцезнаходження, якщо він існує
+                        if (userLocationMarker) {
+                            map.removeLayer(userLocationMarker);
+                        }
+
+                        // Додати маркер на місцезнаходження користувача
+                        userLocationMarker = L.marker([latitude, longitude]).addTo(map)
+                            .bindPopup(`Ви тут!<br>Точність: ${accuracy.toFixed(2)} м`).openPopup();
+
+                        // Центрувати карту на місцезнаходження користувача
+                        map.setView([latitude, longitude], 14);
+
+                        console.log(`Ваші координати: Широта: ${latitude}, Довгота: ${longitude}, Точність: ${accuracy} м`);
+                    },
+                    error => {
+                        switch (error.code) {
+                            case error.PERMISSION_DENIED:
+                                alert("Доступ до місцезнаходження заборонено користувачем.");
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                alert("Інформація про місцезнаходження недоступна.");
+                                break;
+                            case error.TIMEOUT:
+                                alert("Час запиту на місцезнаходження вичерпано.");
+                                break;
+                            default:
+                                alert("Невідома помилка при отриманні місцезнаходження.");
+                        }
+                        console.error(`Помилка геолокації: ${error.message}`);
+                    },
+                    {
+                        enableHighAccuracy: true, // Запит високої точності
+                        timeout: 10000, // Збільшено час очікування до 10 секунд
+                        maximumAge: 0 // Вимкнено кешування
+                    }
+                );
+            } else {
+                alert("Ваш браузер не підтримує Geolocation API.");
+            }
+        }
+
+        // Обробка натискання на кнопку "Показати моє місцезнаходження"
+        locateButton.addEventListener('click', showUserLocation);
+
+        // Завантаження маршрутів при завантаженні сторінки
+        loadRoutes();
+    </script>
+</body>
+</html>
